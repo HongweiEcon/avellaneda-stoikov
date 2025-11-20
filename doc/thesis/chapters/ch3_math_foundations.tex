@@ -1,0 +1,212 @@
+\chapter{做市问题的数学基础}
+\label{chap:math_foundations}
+
+\section{引言}
+
+自动做市的本质是一个典型的随机控制问题：在随机演化的价格过程与订单流过程中，做市商通过选择动态 bid/ask 报价与挂单数量，最大化某种风险调整后的目标函数。在这样的框架下，必须运用到随机微分方程（SDE）、点过程理论（Poisson 与 Hawkes 过程）、随机最优控制理论（HJB 方程），并构建市场微观结构层面的数学表述。
+
+本章旨在为 Avellaneda--Stoikov 以及后续章节中的最优做市模型建立严格的数学基础。内容包括：价格过程的随机建模、订单流的点过程建模、效用函数与风险厌恶表示、库存动态的随机结构，以及 HJB 方程的推导与解释。
+
+\section{价格过程的随机建模}
+
+做市问题的第一层结构是价格动态模型。尽管真实市场中的价格表现包含跳跃、冲击与自激性，但在理论分析中，最基础的模型仍是布朗运动：
+
+\[
+\mathrm{d}S_t = \sigma \,\mathrm{d}W_t,
+\]
+其中 $W_t$ 为标准布朗运动。
+
+这一模型具有以下优点：
+
+\begin{itemize}
+  \item 价格路径连续，避免了大量数学上的不连续项处理；
+  \item $\sigma$ 代表瞬时波动率，是做市模型中最核心的参数；
+  \item 与效用最大化框架结合可产生显式最优报价。
+\end{itemize}
+
+更一般的模型包括：
+
+\subsection{含漂移项的 SDE}
+加密永续合约中，由于 funding rate 引入长期漂移，合理的模型应包含：
+
+\[
+\mathrm{d}S_t = \mu_t \,\mathrm{d}t + \sigma_t \,\mathrm{d}W_t,
+\]
+其中 $\mu_t$ 可由 funding rate 估计（参见 Makarov--Schoar \cite{MakarovSchoar2021}）。
+
+\subsection{含跳跃的价格过程}
+
+加密货币经常出现跳跃，可以用跳扩散模型：
+
+\[
+\mathrm{d}S_t = \sigma\, \mathrm{d}W_t + \kappa \,\mathrm{d}J_t,
+\]
+
+其中 $J_t$ 是泊松跳跃过程。跳跃会显著影响最优报价宽度，因为大跳风险增加做市的库存风险。
+
+本论文后续将在第 \ref{chap:extensions} 章讨论跳扩散与做市的扩展模型。
+
+\section{订单流的点过程模型}
+
+做市商通过被动挂单赚取价差，因此成交的到达时间是核心变量。订单流在数学上通常用点过程（counting process）表示。
+
+\subsection{Poisson 模型}
+
+Avellaneda--Stoikov 模型假设成交是指数型随机过程，其到达强度与报价偏离中间价的距离相关：
+
+\[
+\lambda^{bid}(\delta) = A e^{-k \delta^b},\qquad
+\lambda^{ask}(\delta) = A e^{-k \delta^a}.
+\]
+
+该假设具有以下意义：
+
+\begin{itemize}
+  \item 贴近 mid-price 的报价更容易成交；
+  \item 参数 $k$ 表示订单流对价格的敏感度；
+  \item 参数 $A$ 表示市场流动性规模；
+  \item 强度的指数型结构使得最优报价可以显式求解。
+\end{itemize}
+
+这是做市模型的核心动力来源：spread 与成交概率之间的权衡。
+
+\subsection{非齐次 Poisson 与扩展模型}
+
+在更一般情形下，订单强度可以依赖价格状态、波动率或时间：
+
+\[
+\lambda_t = \lambda(S_t, \sigma_t, t).
+\]
+
+例如，在波动突增期，订单流会激增，做市商应扩大报价距离以降低风险。
+
+\subsection{Hawkes 过程}
+
+加密货币订单流具有强烈的自激性，Hawkes 过程是更适合的模型\cite{BacryMuzyReview2015}：
+
+\[
+\lambda_t = \mu + \sum_{t_i < t} \alpha e^{-\beta (t - t_i)}.
+\]
+
+其中：
+
+- $\alpha/\beta$ 越大，自激性越强；
+- 订单密集时成交风险更高；
+- 做市商必须动态调整报价，避免过多 inventory 累积。
+
+第 \ref{chap:extensions} 章将专门讨论 Hawkes 驱动的做市模型。
+
+\section{现金与库存的动态}
+
+做市商的状态变量包括现金账户 $X_t$ 与库存 $q_t$。  
+当 bid 单成交时：
+
+\[
+q_t \to q_t + 1,\qquad
+X_t \to X_t - (S_t - \delta_t^b).
+\]
+
+当 ask 单成交时：
+
+\[
+q_t \to q_t - 1,\qquad
+X_t \to X_t + (S_t + \delta_t^a).
+\]
+
+因此总资产（wealth）：
+
+\[
+W_t = X_t + q_t S_t.
+\]
+
+做市商的风险主要来自 $q_t S_t$ 的波动，即库存风险。  
+库存越大，做市商越容易在价格跳动中亏损，这就是为什么做市模型必须包含库存处罚项（inventory penalty）。
+
+\section{效用函数与风险厌恶}
+
+Avellaneda--Stoikov 使用指数效用（CARA）：
+
+\[
+U(w) = -e^{-\gamma w},
+\]
+
+其特点：
+
+- 绝对风险厌恶度恒定；
+- 加法结构使得 HJB 推导简单；
+- 导致 reservation price 与 inventory 呈线性关系。
+
+效用最大化目标：
+
+\[
+\max_{\delta^b,\delta^a} \mathbb{E}_t\left[
+    -e^{-\gamma (X_T + q_T S_T)}
+\right].
+\]
+
+这里 $\gamma$ 决定做市商的风险偏好：
+
+- $\gamma$ 小 → 激进做市商 → spread 较窄；
+- $\gamma$ 大 → 保守做市商 → spread 较宽。
+
+\section{随机控制与 HJB 方程}
+
+最优报价策略是一个连续时间随机控制问题。价值函数定义为：
+
+\[
+u(t, x, q, s) =
+\max_{\delta^b, \delta^a}
+\mathbb{E}\left[ -e^{-\gamma (X_T + q_T S_T)} \mid X_t = x, q_t = q, S_t = s \right].
+\]
+
+应用动态规划原理（Bellman optimality principle）：
+
+\[
+0 = \partial_t u + \frac{1}{2}\sigma^2 \partial_{ss}u
++ \max_{\delta^b} \lambda^b(\delta^b) 
+  \big[ u(t, x - (s-\delta^b), q+1, s) - u(t,x,q,s) \big]
+\]
+\[
++ \max_{\delta^a} \lambda^a(\delta^a) 
+  \big[ u(t, x + (s+\delta^a), q-1, s) - u(t,x,q,s) \big].
+\]
+
+这是 Avellaneda--Stoikov 模型的核心 HJB。
+
+简化后可导出：
+
+- reservation price  
+- optimal spread  
+
+其推导将在下一章详细展开。
+
+\section{库存风险与二次罚项}
+
+另一类做市模型（如 Cartea--Jaimungal）采用对库存添加显式二次罚项：
+
+\[
+\text{Objective} = 
+\mathbb{E}[W_T] - \frac{\gamma}{2}\mathbb{E}\left[ \int_0^T q_t^2 \sigma_t^2 \mathrm{d}t \right].
+\]
+
+意义：
+
+- 直接惩罚大库存；
+- 与布朗价格模型完美匹配；
+- 适用于非指数效用的框架。
+
+本论文仍采用 AS 模型的 CARA 效用，但库存罚项概念对工程系统非常重要（将在第 \ref{chap:system_design} 章讨论）。
+
+\section{本章小结}
+
+本章介绍了做市问题的数学基础，包括：
+
+- 价格过程：布朗、含漂移、跳扩散；
+- 点过程：Poisson 与 Hawkes；
+- 现金与库存动态；
+- CARA 效用与风险偏好；
+- 随机控制与 HJB 方程框架；
+
+这些工具构成后续 Avellaneda--Stoikov 模型（第 \ref{chap:as_model} 章）与 GLT 模型（第 \ref{chap:glt_model} 章）的基础。
+
+下一章将从本章的基础数学出发，完整推导 Avellaneda--Stoikov 最优做市模型。

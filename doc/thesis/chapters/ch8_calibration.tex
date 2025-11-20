@@ -1,0 +1,320 @@
+\chapter{参数估计与做市模型的校准}
+\label{chap:calibration}
+
+\section{引言}
+
+在前几章中，我们构建了做市商面临的数学框架，包括价格模型、订单流模型、库存动态以及最优控制方程。然而，要使做市策略在真实市场中运行，必须估计模型中的关键参数。
+
+本章系统讨论以下参数的估计方法：
+
+\begin{itemize}
+  \item 价格波动率 $\sigma$
+  \item 订单到达强度参数 $(A, k)$
+  \item Hawkes 自激性订单流参数 $(\mu, \alpha, \beta)$
+  \item 跳跃强度与冲击分布 $(\lambda_J, \kappa)$
+  \item 永续合约的 funding drift $\mu_t$
+  \item 市场冲击核 $G(t)$ 与瞬时冲击 $\eta$
+\end{itemize}
+
+同时，我们讨论如何将这些参数集成到做市系统，使其在高频数据流下实现实时更新。
+
+\section{价格波动率 $\sigma$ 的高频估计}
+
+\subsection{基于 mid-price 的 realized volatility}
+
+Crypto CEX 的撮合频率极高，可以用成交价或 mid-price 构建：
+
+\[
+\hat{\sigma}_t^2
+=
+\sum_{i=t-\Delta t}^t (m_i - m_{i-1})^2.
+\]
+
+常用窗口：
+
+- 高频做市：1–5 秒  
+- 中频做市：30–300 秒  
+
+为稳定估计，可使用 EWMA：
+
+\[
+\hat{\sigma}_t^2
+=
+\lambda \hat{\sigma}_{t-1}^2
++
+(1-\lambda)(m_t - m_{t-1})^2.
+\]
+
+其中 $\lambda \approx 0.9$–$0.99$。
+
+\subsection{带跳跃的波动率估计}
+
+如果价格存在跳跃，应使用：
+
+\[
+\hat{\sigma}_t^2 = RV_t - \sum_{j \in \text{jumps}} (\Delta S_j)^2.
+\]
+
+跳跃可通过 bipower variation 判定：
+
+\[
+BV_t = \frac{\pi}{2}\sum |r_{i-1}||r_i|.
+\]
+
+当
+
+\[
+|r_i|^2 - BV_t > 3 \cdot \text{std}(BV)
+\]
+
+则视为跳跃。
+
+\section{订单流强度参数 $(A, k)$ 的估计}
+
+AS/GLT 强度模型：
+
+\[
+\lambda(\delta) = A e^{-k\delta}.
+\]
+
+对于成交事件 \((\delta_i,N_i)\)，MLE 估计为：
+
+\[
+\ln L(A,k)
+=
+\sum_i \ln\left(Ae^{-k\delta_i}\right)
+-
+A\sum_i \int e^{-k\delta_i(t)} \mathrm{d}t.
+\]
+
+求导可得：
+
+\[
+\hat{k}
+=
+\operatorname{argmin}_k
+\left(
+\sum_i k\delta_i + A(k) T
+\right).
+\]
+
+实际中更简单方法：
+
+\[
+\ln \lambda_i = \ln A - k\delta_i.
+\]
+
+拟合线性模型：
+
+\[
+y_i = \alpha + \beta x_i,
+\quad
+y_i=\ln \lambda_i,\, x_i=\delta_i.
+\]
+
+即可得：
+
+\[
+k = -\beta,\qquad A = e^\alpha.
+\]
+
+Crypto CEX 的经验：
+
+- $k$ 可数秒内变化（市场紧张时变大）
+- $A$ 在流动性事件中跳变（如清算）
+
+因此应使用 rolling regression。
+
+\section{Hawkes 自激性订单流参数 $(\mu,\alpha,\beta)$}
+
+对买/卖方向分别估计：
+
+\[
+\lambda_t = \mu + \sum_{t_i<t} \alpha e^{-\beta(t-t_i)}.
+\]
+
+log-likelihood：
+
+\[
+\ln L
+=
+\sum_{i}
+\ln \lambda_{t_i}
+-
+\int_0^T \lambda_t\, \mathrm{d}t.
+\]
+
+对应：
+
+\[
+\int_0^T \lambda_t\,\mathrm{d}t
+=
+\mu T
++
+\sum_{t_i<t_j} \frac{\alpha}{\beta}
+\left(
+1-e^{-\beta(t_j-t_i)}
+\right).
+\]
+
+可通过数值优化求解：
+
+- BFGS
+- L-BFGS-B
+- Newton-Raphson
+
+参数含义：
+
+- $\alpha/\beta$ 越接近 1 → 订单流越有簇集 → 做市风险越大
+- Crypto 中常见 $\alpha/\beta \in [0.6,0.9]$
+
+可实时更新（每 1–5 秒）。
+
+\section{市场冲击参数的估计}
+
+采用 Gatheral (2010) 的冲击模型：
+
+\[
+\Delta S_t = \eta v_t + \sum G(u)v_{t-u}\mathrm du + \epsilon_t.
+\]
+
+估计方法：
+
+- 对市场订单大小与即时价格变化回归
+- 对 transient impact 进行核回归或 GMM
+
+例如瞬时冲击：
+
+\[
+\Delta S_t = \eta q_t + \epsilon_t.
+\]
+
+用最小二乘估计：
+
+\[
+\hat{\eta}
+=
+\frac{\sum q_t \Delta S_t}{\sum q_t^2}.
+\]
+
+\section{跳跃参数 $(\lambda_J,\kappa)$ 的估计}
+
+跳跃模型：
+
+\[
+\mathrm{d}S_t = \sigma \mathrm{d}W_t + \kappa \mathrm{d}J_t.
+\]
+
+跳跃检测可用：
+
+- bipower variation
+- threshold method
+
+跳跃幅度 \(\kappa\) 用跳跃样本平均：
+
+\[
+\hat{\kappa} = \text{mean}(|\Delta S_{jump}|).
+\]
+
+跳跃强度：
+
+\[
+\hat{\lambda}_J = \frac{\text{jump count}}{T}.
+\]
+
+Crypto 市场跳跃频繁，因此模型应动态调整。
+
+\section{永续 funding drift 的估计}
+
+永续价格满足：
+
+\[
+\mathrm{d}S_t = f_t S_t \mathrm{d}t + \sigma\mathrm{d}W_t.
+\]
+
+实时 drift：
+
+\[
+\mu_t = f_t S_t.
+\]
+
+但 funding 通常 8 小时结算一次，因此短期影响可通过：
+
+\[
+\mu_t^{eff}
+=
+\mathbb{E}[f_{next}] \cdot S_t
+\]
+
+估计未来 funding 可用：
+
+- Net basis
+- Premium Index
+- Orderbook imbalance
+- Funding prediction ML model
+
+\section{多交易所基差与相关性参数的估计}
+
+若做市跨多个交易所：
+
+\[
+B_t = S_t^{(1)} - S_t^{(2)}.
+\]
+
+基差均值回复模型：
+
+\[
+\mathrm{d}B_t = -\kappa_B B_t \mathrm{d}t + \sigma_B \mathrm{d}W_t.
+\]
+
+估计方法：
+
+- OLS 回归（equilibrium relationship）
+- 2SLS 或 ECM（error correction model）
+
+相关性矩阵：
+
+\[
+\Sigma_{ij} = \text{Corr}(\mathrm{d}S_t^{(i)}, \mathrm{d}S_t^{(j)}).
+\]
+
+用于库存聚合管理（GLT 扩展）。
+
+\section{模型参数的实时更新机制}
+
+Crypto 做市系统一般每 1 秒或每 5 秒刷新全部参数：
+
+\begin{itemize}
+  \item $\sigma$：1–5 秒 realized volatility
+  \item $A,k$：rolling regression (过去 50–200 成交)
+  \item Hawkes $(\mu,\alpha,\beta)$：moving MLE（30–60 秒窗口）
+  \item funding drift：来自交易所 API，插值得到短期 drift
+  \item impact $\eta$：以 1 分钟窗口回归更新
+  \item jump intensity：rolling jump detection
+\end{itemize}
+
+参数刷新后：
+
+- 更新 AS/GLT 最优报价；
+- 更新库存 penalty；
+- 更新风险限制；
+- 重新生成 bid/ask 挂单。
+
+这部分将在第 9–11 章的工程系统中完整实现。
+
+\section{本章小结}
+
+本章提供了做市模型校准的完整方法，包括：
+
+\begin{itemize}
+  \item 波动率估计（realized volatility / EWMA / jump-adjusted）
+  \item 强度参数 $(A,k)$ 的 MLE 与回归估计
+  \item Hawkes 参数的 log-likelihood 估计
+  \item 冲击核、跳跃参数、funding drift 的估计方法
+  \item 多交易所相关结构的估计
+  \item 高频 trading 系统的实时参数更新方案
+\end{itemize}
+
+这些参数是将理论做市模型落地为可运行交易系统的关键。
+
+下一章将进入实现层面：如何把这些模型嵌入真实高频做市系统。

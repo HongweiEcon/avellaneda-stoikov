@@ -1,0 +1,210 @@
+\chapter{限价订单簿与加密货币 CEX 的市场微观结构}
+\label{chap:microstructure}
+
+\section{引言}
+
+限价订单簿（Limit Order Book, LOB）是现代电子交易市场中价格形成的核心机制，负责记录市场参与者在不同时点对不同价格的买卖意愿。对于做市商而言，理解订单簿的动态结构、订单的到达与撤销规律、价差与深度的变化机制，是构建精确报价策略与库存管理方法的基础。
+
+本章旨在从数学与经济学的角度，系统介绍 CEX（centralized exchanges）中 LOB 的定义、结构、动态，以及加密货币市场中特有的微观结构特征。内容将涵盖订单类型、队列优先级、订单流的随机结构、价格形成机制、微价格（microprice）、订单簿不平衡度（imbalance）、市场冲击与订单簿弹性等关键概念。我们将结合传统市场微观结构理论\cite{GlostenMilgrom1985,HoStoll1981,Kyle1985,Hasbrouck2007Book,BouchaudBook2010}以及针对加密货币市场的最新研究成果\cite{MakarovSchoar2021,DonierBouchaud2015Crypto}，构建一个完整的 LOB 分析框架。
+
+\section{限价订单簿的基本结构}
+
+\subsection{订单簿的形式化定义}
+
+一个标准的双边限价订单簿可以表示为一个时间依赖的价格–数量函数：
+\[
+\mathcal{L}_t = \{ (p, q(p,t)) : p \in \mathbb{R} \},
+\]
+其中 $q(p,t)$ 表示价格为 $p$ 时的挂单数量：
+
+- $q(p,t) > 0$ 对应卖单量（ask side）
+- $q(p,t) < 0$ 对应买单量（bid side）
+
+在实际交易所中，价格是离散的（tick size $\Delta p$），因此订单簿由价格阶梯（price levels）构成：
+
+\[
+\mathcal{L}_t = \{(p_i, q_i(t)), i \in \mathbb{Z}\}.
+\]
+
+关键价格概念包括：
+
+\[
+\text{best bid: } b_t = \max\{p_i : q_i(t) < 0\},
+\]
+\[
+\text{best ask: } a_t = \min\{p_i : q_i(t) > 0\},
+\]
+\[
+\text{mid-price: } m_t = \frac{a_t + b_t}{2}.
+\]
+
+订单簿的即时卖买差（spread）为：
+\[
+s_t = a_t - b_t.
+\]
+
+CEX 市场的 tick size 通常固定，如 Binance 的 BTCUSDT tick size 为 0.1 USDT，而一些期货与 CEX perpetual 合约的 tick size 更小。
+
+\subsection{订单类型与撮合机制}
+
+交易所中存在三类基本订单：
+
+\begin{itemize}
+  \item \textbf{限价单（limit order）}：给出价格与数量，进入订单簿排队。
+  \item \textbf{市价单（market order）}：立即与已有挂单撮合。
+  \item \textbf{撤单（cancellation）}：从订单簿中移除。
+\end{itemize}
+
+订单簿的核心机制是 \textbf{价格优先、时间优先（price–time priority）}。对于做市商而言，这意味着：
+
+- 提前挂单有更好的队列位置；
+- 小幅提高或降低报价可显著提高成交概率；
+- 每一次 cancel/replace 都会丢失队列位置，从而影响预期收益。
+
+\subsection{撮合引擎与队列动态}
+
+限价订单簿可以用三个主要的点过程描述：
+
+- 限价单到达过程 $N^{LO}_t$，带有价格与数量属性；
+- 市价单（或 crossing limit order）的到达过程 $N^{MO}_t$；
+- 撤单到达过程 $N^{C}_t$。
+
+Cont、Stoikov 与 Talreja\cite{ContStoikovTalreja2010} 提出了一个经典模型，将订单簿视为由一系列独立的 Poisson process 驱动的高维马尔可夫过程，能够解释：
+
+- spread 的稳态分布；
+- 深度分布的稳定性形态；
+- 订单流不均匀导致的价格跳动。
+
+在加密货币 CEX 中，上述过程更适合使用 Hawkes 过程\cite{BacryMuzyReview2015}建模，因为订单流具有显著的自激性，即大单消耗会引发更多同方向订单到达。
+
+\section{价格形成机制}
+
+\subsection{微价格（microprice）}
+
+简单的 mid-price 不能完全反映短期价格预期，特别在订单簿不平衡时。Stoikov（2018）\cite{Stoikov2018Microprice} 提出“微价格”概念，用订单簿加权反映短期预期：
+
+\[
+\text{microprice}_t =
+\frac{a_t \cdot V^{bid}_t + b_t \cdot V^{ask}_t}{V^{bid}_t + V^{ask}_t},
+\]
+其中 $V^{bid}_t$ 和 $V^{ask}_t$ 分别是买卖一档的挂单量。
+
+若买方挂单更多，则 microprice 较接近 ask，表明短期上涨概率更高。
+
+做市商可利用 microprice 调整 reservation price，从而提高 inventory 的动态控制效果。
+
+\subsection{订单簿不平衡度（imbalance）}
+
+经典定义为：
+
+\[
+I_t = \frac{V^{bid}_t - V^{ask}_t}{V^{bid}_t + V^{ask}_t}.
+\]
+
+实证研究（如 Huang–Stoll\cite{HuangStoll1994}）显示，对高频价格变化具有显著预测力。
+
+在加密 CEX 中，imbalance 的预测能力更强，因为：
+
+- maker rebate 激励导致挂单量更可控；
+- 大量高频参与者同步观察同一指标。
+
+\section{订单流的统计特性}
+
+\subsection{Poisson 与非齐次 Poisson 模型}
+
+最基础的假设（AS 模型使用）是：
+
+\[
+\lambda(\delta) = A e^{-k\delta},
+\]
+
+反映报价远离 mid-price 时成交概率下降。
+
+但是这一模型无法解释：
+
+- 市价单爆发（bursts）
+- order flow clustering
+- volatility–volume coupling
+
+\subsection{Hawkes 过程}
+
+加密货币 CEX 中订单流呈现典型自激性。Bacry–Muzy\cite{BacryMuzyReview2015}模型定义如下：
+
+\[
+\lambda_t = \mu + \sum_{t_i < t} \phi(t-t_i),
+\]
+
+常用的指数核：
+
+\[
+\phi(t) = \alpha e^{-\beta t}.
+\]
+
+当 $\alpha/\beta \to 1$ 时，市场高度不稳定，出现 liquidity crisis 或流动性枯竭。
+
+做市商的风险管理必须显式考虑这一点，因为：
+
+- 强自激性意味着库存风险在高频尺度被放大；
+- cancellation clustering 意味着队列位置变动频繁；
+- burst 模式导致 spread 应在短期扩大。
+
+\section{市场冲击与价格弹性}
+
+市场冲击（market impact）描述市价单对未来价格的影响。Gatheral（2010）\cite{Gatheral2010Impact}指出，冲击应分为：
+
+- permanent impact  
+- transient impact  
+- instantaneous impact  
+
+冲击大小决定：
+
+- maker 的 adverse selection 风险  
+- 被动成交后价格向不利方向移动的概率  
+
+做市商在报价时必须平衡：
+
+- narrow spread → 高成交但高冲击风险  
+- wide spread → 低成交但低风险  
+
+这正是 AS-HJB 模型中最关键的 trade-off。
+
+\section{加密货币 CEX 的微观结构特征}
+
+\subsection{永续合约与 funding rate}
+
+Makarov–Schoar（2021）\cite{MakarovSchoar2021}指出：
+
+- perp price = spot price + basis  
+- funding rate 驱动 perp price drift  
+
+做市商在 perp 合约上必须将 drift 纳入 reservation price：
+
+\[
+r_t = m_t - q_t \gamma \sigma^2 + \text{funding\_adjustment}.
+\]
+
+\subsection{跨交易所价格发现与套利约束}
+
+加密市场存在：
+
+- 不同交易所的撮合延迟差异  
+- 资金费率差异  
+- 资金成本与风控规则差异  
+
+做市商的库存管理必须考虑 cross-venue spread 和基差风险。
+
+\subsection{延迟、架构与 queue-jump 风险}
+
+CEX 市场没有统一撮合系统，不同交易所：
+
+- 服务器架设位置不同  
+- 撮合延迟不同  
+- API 限速与播单（order stream）结构不同  
+
+延迟越高，queue-jump 越严重，AS 模型中的到达强度需要进行 latency-aware 修正。
+
+\section{本章小结}
+
+本章从形式化定义、订单流、价格形成、市场冲击到加密货币 CEX 的特殊性，系统讨论了限价订单簿的微观结构。通过将传统微观结构理论与加密市场的独特机制相结合，我们为后续的做市模型、库存控制与工程系统搭建了语义与结构基础。
+
+下一章将深入介绍做市问题的数学基础，包括点过程模型、Hawkes 过程、随机微分方程与 HJB 方程，为 Avellaneda–Stoikov 模型与后续扩展提供严谨的数学框架。

@@ -1,0 +1,252 @@
+\chapter{Gueant--Lehalle--Tapia 模型：库存约束、线性化与谱分析}
+\label{chap:glt_model}
+
+\section{引言}
+
+上一章给出了 Avellaneda--Stoikov（AS）最优做市模型的完整推导，并得到了 reservation price 与 optimal spread 的经典闭式解。然而，AS 模型存在以下两个局限：
+
+\begin{enumerate}
+  \item \textbf{库存无限（$q$ 可任意大）}：实际交易中做市商受到严格的风险上限，例如 $|q| \le Q$；
+  \item \textbf{HJB 非线性}：AS 的 HJB 方程在加入库存约束后变得更复杂，不易数值求解，更不易在高频系统中实时运行；
+\end{enumerate}
+
+为解决这些问题，Guéant、Lehalle 与 Tapia（GLT）在 2012 年的论文\cite{GueantLehalleTapia2012} 提出了一套极为重要的模型扩展，主要结果包括：
+
+\begin{itemize}
+  \item 引入库存上限（finite inventory buffer zone）；
+  \item 通过变量变换将非线性 HJB \emph{线性化}；
+  \item 建立关于库存 $q$ 的有限维线性 ODE 系统；
+  \item 使用谱分解方法（spectral decomposition）求解；
+  \item 基于极限情形给出 asymptotic closed-form solution；
+\end{itemize}
+
+GLT 模型是目前在实盘做市系统中最广泛使用的数学模型，具备可解释性、可实现性以及良好的数值稳定性。
+
+本章将从 AS 模型出发，完整推导 GLT 模型的核心结果。
+
+\section{有限库存约束与价值函数变换}
+
+回顾 AS 模型的价值函数形式：
+
+\[
+u(t,x,q,s)= -e^{-\gamma(x+qs)} \phi_q(t).
+\]
+
+GLT 的关键 insight 是：当 $q$ 取有限值集合 $\{-Q,-Q+1,\dots,Q\}$ 时，可以将效用函数完全分离为：
+
+\[
+u(t, x, q, s)
+=
+-e^{-\gamma(x + qs)} 
+v_q(t)^{-\gamma/k},
+\quad q \in \{-Q,\dots, Q\}.
+\]
+
+其中：
+
+- $v_q(t)$ 是新的未知函数；
+- $k$ 是订单流敏感度（来自强度函数 $\lambda = A e^{-k\delta}$）；
+- $Q$ 是库存上限。
+
+代入 HJB 后，可将非线性 PDE 消去，并得到关于 $v_q$ 的线性方程。
+
+\section{线性 ODE 系统的推导}
+
+代入 AS 强度：
+
+\[
+\lambda(\delta) = A e^{-k\delta},
+\]
+
+并对 $\delta_t^{b,a}$ 求最优解，可以得到最优价差只依赖于 $v_q$ 的比值：
+
+\[
+\delta^{b*}(q) 
+= 
+\frac{1}{k} 
+\ln\left(\frac{v_q}{v_{q+1}}\right)
++
+\frac{1}{\gamma}\ln\left(1+\frac{\gamma}{k}\right),
+\]
+
+\[
+\delta^{a*}(q) 
+= 
+\frac{1}{k} 
+\ln\left(\frac{v_q}{v_{q-1}}\right)
++
+\frac{1}{\gamma}\ln\left(1+\frac{\gamma}{k}\right).
+\]
+
+将这些代回 HJB，即得：
+
+\[
+\dot{v}_q(t)
+=
+\alpha q^2 v_q(t)
+-\eta 
+\big(v_{q-1}(t) + v_{q+1}(t)\big),
+\quad |q| < Q,
+\]
+
+边界条件：
+
+\[
+\dot{v}_Q = \alpha Q^2 v_Q - \eta v_{Q-1},
+\quad
+\dot{v}_{-Q} = \alpha Q^2 v_{-Q} - \eta v_{-Q+1},
+\]
+
+其中常数：
+
+\[
+\alpha = \frac{k}{2\gamma}\sigma^2,
+\quad
+\eta = A(1+\frac{\gamma}{k})^{-(1+k/\gamma)}.
+\]
+
+这样，原先高维、非线性、含位置、含现金的 HJB 问题，变成一个关于库存维度的 \textbf{$(2Q+1)$-维线性常微分方程组}：
+
+\[
+\dot{\mathbf{v}}(t) = M \mathbf{v}(t),
+\quad
+\mathbf{v}(T) = (1,1,\dots,1).
+\]
+
+其中矩阵 $M$ 为三对角矩阵：
+
+\[
+M_{q,q} = \alpha q^2,
+\quad 
+M_{q,q+1} = M_{q,q-1} = -\eta.
+\]
+
+这就是 GLT 模型的核心。
+
+\section{谱分解求解}
+
+矩阵 $M$ 是一个带状对称矩阵：
+
+\[
+M =
+\begin{pmatrix}
+\ddots & -\eta & 0 \\
+-\eta & \alpha q^2 & -\eta \\
+0 & -\eta & \ddots
+\end{pmatrix}.
+\]
+
+由于 $M$ 是对称的，它拥有一组标准正交特征向量 $\{f^i\}$ 以及对应特征值 $\{\lambda_i\}$：
+
+\[
+M f^i = \lambda_i f^i.
+\]
+
+因此线性系统可解为：
+
+\[
+v_q(t)
+=
+\sum_{i=0}^{2Q}
+c_i f^i_q e^{\lambda_i (t-T)},
+\]
+
+其中 $c_i$ 由终端条件 $v_q(T)=1$ 决定。
+
+在实际实现中，$Q$ 通常不大（5–50），求解成本非常低。
+
+\section{渐近闭式解（Asymptotic Closed Form）}
+
+当 $Q$ 很大、$\eta/\alpha$ 处于适中规模时，可以证明最小特征值对应的特征向量渐近为：
+
+\[
+f^0_q \approx C e^{-\omega q^2},
+\quad
+\omega = \frac{1}{2}\sqrt{\frac{\alpha}{\eta}}.
+\]
+
+代回 bid/ask 价差公式，可得 asymptotic closed form：
+
+\[
+\delta^{b*}(q) 
+\approx
+\frac{1}{\gamma}
+\ln\left(1+\frac{\gamma}{k}\right)
++
+\frac{1}{2k}\sqrt{\frac{\alpha}{\eta}}(2q+1),
+\]
+
+\[
+\delta^{a*}(q) 
+\approx
+\frac{1}{\gamma}
+\ln\left(1+\frac{\gamma}{k}\right)
+-
+\frac{1}{2k}\sqrt{\frac{\alpha}{\eta}}(2q-1).
+\]
+
+与 AS 模型相比，这一版本：
+
+- retain 完整库存非线性行为；
+- 对大库存具有严格惩罚；
+- 在高频系统中容易实时计算。
+
+这是目前工程中最常用的做市公式之一。
+
+\section{经济解释}
+
+\subsection{库存越大，报价越偏离 mid-price}
+
+bid/ask 的库存调整项：
+
+\[
+\pm \frac{1}{2k}\sqrt{\frac{\alpha}{\eta}}(2q \pm 1)
+\]
+
+说明：
+
+- $q>0$（多头） → bid 往下调整、ask 往上调整；
+- $q<0$（空头） → 反之。
+
+库存越大，偏移越强。这与 AS 模型一致，但惩罚更加平滑。
+
+\subsection{价差自动扩张}
+
+最优 spread：
+
+\[
+\delta^{a*}(q)+\delta^{b*}(q)
+=
+\frac{2}{\gamma}
+\ln\left(1+\frac{\gamma}{k}\right)
++
+\sqrt{\frac{\alpha}{\eta}}.
+\]
+
+价差自动包含：
+
+- 流动性惩罚 $\frac{2}{\gamma}\ln(1+\gamma/k)$；
+- 库存惩罚 $\sqrt{\alpha/\eta}$。
+
+\section{在加密货币 CEX 做市的适配}
+
+GLT 模型在 crypto CEX 中比在传统股票市场更有价值：
+
+\begin{itemize}
+  \item 高波动性 $\sigma$ → 增强库存风险控制需求；
+  \item 订单簿深度不稳定 → $A,k$ 经常要实时估计；
+  \item 自激型订单流 → $\eta$ 可能动态变化；
+  \item 多交易所报价 → $Q$ 需要动态调整；
+\end{itemize}
+
+在实际 BTC/ETH 做市系统中，通常使用：
+
+- GLT asymptotic closed-form 用于高频更新；
+- $A,k,\sigma$ 用 1–10 秒窗口实时估计；
+- $Q$ 根据 vol、资金、风险限额动态调整。
+
+\section{本章小结}
+
+本章从 Avellaneda--Stoikov 模型出发，引入库存约束，并通过变量变换与线性化技巧，将做市问题转化为有限维线性 ODE 系统。通过谱分解可以求得解析形式的数值解，而渐近闭式解在工程系统中最为常用。
+
+下一章将基于本章的库存结构，研究做市盈利的本质，并结合均值回复模型与加密货币价格行为分析长期做市收益。

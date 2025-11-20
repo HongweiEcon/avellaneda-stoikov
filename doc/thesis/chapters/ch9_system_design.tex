@@ -1,0 +1,319 @@
+\chapter{自动做市系统架构设计}
+\label{chap:system_design}
+
+\section{引言}
+
+在前八章中，我们从市场微观结构、随机控制理论、最优做市模型、扩展模型到参数估计，系统构建了完整的自动做市理论框架。然而，数学模型本身并不能直接在真实市场运行。要将其转化为稳定、高性能、低延迟、可风险控制的交易系统，需要严格的工程架构。
+
+本章将设计一个可部署于加密货币 CEX（如 Binance、OKX、Bybit）的高频自动做市系统。系统由以下核心模块组成：
+
+\begin{enumerate}
+  \item 实时数据接入模块（Market Data Feed Handler）
+  \item 定价引擎（Pricing Engine）
+  \item 订单管理系统（Order Management System, OMS）
+  \item 库存与风险控制系统（Risk Engine）
+  \item 参数更新引擎（Parameter Refresh Engine）
+  \item 报价与执行策略调度器（Strategy Scheduler）
+  \item 仿真器与回测引擎（Simulator \& Backtester）
+  \item 系统监控与日志框架（Monitoring \& Logging）
+\end{enumerate}
+
+这些模块必须协同运行，在毫秒级时间尺度下完成全链条计算与决策。
+
+\section{系统总体架构}
+
+图 \ref{fig:system_architecture}（请在最终论文中放图）展示了系统架构的总览，自上游的数据流到下游的订单执行路径清晰可见。
+
+系统可抽象为三个主要层级：
+
+\begin{itemize}
+  \item \textbf{数据层（Data Layer）}：接收交易所原始数据（Orderbook、Trades、Funding、Index Price）
+  \item \textbf{逻辑层（Logic Layer）}：定价、风险、策略、参数估计
+  \item \textbf{执行层（Execution Layer）}：订单生成、撤单、重挂、成交处理
+\end{itemize}
+
+每一层都对系统稳定性、延迟和收益具有决定性影响。
+
+\section{实时数据接入模块}
+
+自动做市是一个强依赖市场微观结构的策略，因此“数据延迟”直接决定做市盈利能力。Crypto CEX 数据一般通过 WebSocket 接收：
+
+\[
+\text{Data} = \{ \text{Orderbook L2}, \text{Trade Prints}, \text{Ticker}, \text{Funding Rate}, \dots \}.
+\]
+
+要求：
+
+\begin{itemize}
+  \item L2 orderbook 更新粒度需达到毫秒级；
+  \item Trade Prints 用于订单到达强度、Hawkes 参数与 volatility 估计；
+  \item Funding/Index 用于永续 drift 修正；
+  \item 所有数据需严格按时间戳排序；
+\end{itemize}
+
+数据模块输出：
+
+\[
+\mathcal{D}_t = \{m_t, b_t, a_t, \Delta m_t, \text{OB}_t, \text{trades}, \text{imbalance}, V_t^{bid},V_t^{ask}\}.
+\]
+
+这些输入会进入定价引擎与参数引擎。
+
+\section{定价引擎（Pricing Engine）}
+
+定价引擎是做市策略的数学核心，它使用：
+
+\begin{itemize}
+  \item AS/GLT 模型（或扩展模型）
+  \item 实时波动率 $\hat{\sigma}_t$
+  \item 强度参数 $(\hat{A}_t, \hat{k}_t)$
+  \item 订单流 Hawkes 参数 $(\hat{\mu},\hat{\alpha},\hat{\beta})$
+  \item 基差、funding drift
+  \item microprice、imbalance、queue-length signals
+\end{itemize}
+
+\subsection{核心输出}
+
+定价引擎每秒或每 200ms 输出：
+
+\[
+\delta_t^{b*}(q_t),\quad \delta_t^{a*}(q_t)
+\]
+
+\[
+S_t^{b*} = S_t - \delta_t^{b*},\qquad
+S_t^{a*} = S_t + \delta_t^{a*}.
+\]
+
+这些价格直接进入订单管理系统。
+
+\subsection{GLT 模型在引擎中的实现}
+
+因为 GLT 提供线性 ODE：
+
+\[
+\dot{v}(t) = M v(t),
+\]
+
+我们可以：
+
+\begin{itemize}
+  \item 离线求特征值/特征向量；
+  \item 在线用向量外积直接计算 $v_q(t)$；
+  \item 实时更新 $(A,k,\sigma)$；
+  \item 对库存变化进行即时调整；
+\end{itemize}
+
+这使得 GLT 模型可以毫秒级计算。
+
+\section{订单管理系统（OMS）}
+
+OMS 是做市系统的执行核心，负责：
+
+\begin{enumerate}
+  \item 下单（Limit）
+  \item 撮合响应（Fill / Partial Fill）
+  \item 撤单（Cancel）
+  \item 改单（Replace）
+  \item 订单生命周期管理（Aging）
+\end{enumerate}
+
+\subsection{OMS 必须保证的性质}
+
+\begin{itemize}
+  \item 幂等性（Idempotency）
+  \item 低延迟（sub-ms 内部处理）
+  \item 可恢复性（断线自动恢复挂单）
+  \item 与交易所 API 一致性（Orderbook Snapshot 同步）
+\end{itemize}
+
+\subsection{订单刷新策略}
+
+典型的做市刷新周期：
+
+- 100ms – 500ms 刷新全部报价  
+- 20ms – 50ms 检查是否被市场跳过（queue position risk）  
+- 若价格偏离 mid-price 超过阈值立即撤单  
+
+高频做市中一个关键策略是：
+
+\[
+\textbf{Cancel aggressive, place conservative.}
+\]
+
+OMS 的性能直接影响策略的胜率。
+
+\section{库存与风险控制系统（Risk Engine）}
+
+风险引擎的主要目标是：
+
+\[
+|q_t| \le Q_t^{max}.
+\]
+
+库存上限 \(Q_t^{max}\) 可动态控制：
+
+\[
+Q_t^{max} = f(\sigma_t, \text{Hawkes intensity}, \text{liquidity}, \text{vol regime}).
+\]
+
+示例：
+
+\[
+Q_t^{max} = \frac{K}{\sigma_t},
+\]
+
+即波动越大，库存越小。
+
+Risk Engine 的功能包括：
+
+\begin{itemize}
+  \item 实时计算库存风险 $q_t \sigma_t$
+  \item 使用 GLT 的库存倾斜调整 ask/bid
+  \item 监测 extreme fills、清算行情、跳跃风险
+  \item 平仓机制（当库存过大时主动吃单）
+\end{itemize}
+
+必要时执行主动对冲：
+
+\[
+\text{Hedge} = -q_t S_t^{perp}.
+\]
+
+\section{参数更新引擎}
+
+从第八章的校准结果可知，所有参数必须滚动估计：
+
+\[
+\Theta_t = \{\sigma_t, A_t, k_t, \mu_t,\alpha_t,\beta_t, \eta_t, f_t,\lambda_J\}.
+\]
+
+参数更新周期：
+
+- 高频做市：200ms–1s  
+- 中频做市：1–10s  
+
+更新方式：
+
+- EWMA（volatility）
+- Rolling regression（$k$）
+- Hawkes MLE（每 1–5 秒）
+- Funding drift 通过 exchange APIs
+
+参数更新后，会立即刷新报价。
+
+\section{策略调度器（Strategy Scheduler）}
+
+Scheduler 是整个系统的 “大脑”，负责：
+
+\begin{itemize}
+  \item 控制策略执行顺序
+  \item 限制过度撤单（anti-cancel-throttle）
+  \item 控制挂单量（per-layer max）
+  \item 监控 market state
+\end{itemize}
+
+典型 workflow：
+
+\begin{enumerate}
+  \item 读取最新市场数据  
+  \item 更新参数  
+  \item 调用 Pricing Engine 生成报价  
+  \item 调用 Risk Engine 调整库存倾斜  
+  \item 调用 OMS 执行 / 撤单 / 改单  
+\end{enumerate}
+
+所有过程必须在 50–200ms 内完成。
+
+\section{高频仿真器（LOB Simulator）}
+
+回测完全无法模拟真实 CEX 成交，因为：
+
+- queue priority
+- market order bursts
+- orderbook resiliency
+- Hawkes effect
+- latency 影响成交事件
+
+因此需要构建 LOB Simulator：
+
+\[
+\mathcal{S}: \text{Order stream} \to \text{Simulated fills}.
+\]
+
+使用以下数据：
+
+- L2 snapshots
+- incremental diff feed
+- trade prints
+- cancellation bursts
+
+仿真器返回：
+
+- 是否成交？
+- 成交价格？
+- queue position？
+- partial fill 还是 full fill？
+
+真实做市回测必须使用 LOB Simulator。
+
+\section{系统监控}
+
+核心监控指标：
+
+\[
+\text{PnL}_t,\quad q_t,\quad \text{spread},\quad \sigma_t,\quad \lambda_t^a,\lambda_t^b,
+\]
+
+以及：
+
+- OMS 错误率
+- API 延迟
+- order sent / filled ratio
+- cancel rate
+- 市场跳跃检测
+
+监控系统必须能在：
+
+- 清算行情
+- network outage
+- market halt  
+
+情况下安全关闭系统。
+
+\section{系统延迟与硬件架构}
+
+Crypto CEX API 延迟典型值：
+
+- Binance Futures：5–20ms
+- OKX Futures：10–25ms
+- Coinbase：20–50ms
+
+系统目标：
+
+\[
+\text{internal latency} < 5\text{ ms}.
+\]
+
+硬件：
+
+- 单机 + 多线程
+- Python + C++/Rust mixed
+- affinity pinning（固定 CPU 绑定）
+- 高频时需要 binlog-based deterministic replay
+
+\section{本章小结}
+
+本章从工程角度构建了一个完整的加密货币做市系统，包括：
+
+\begin{itemize}
+  \item 实时数据接入  
+  \item GLT/AS 定价引擎  
+  \item OMS 订单执行模块  
+  \item 风险管理引擎  
+  \item 滚动参数更新  
+  \item 仿真器与回测系统  
+  \item 系统监控与低延迟设计  
+\end{itemize}
+
+本章将理论构建与实际交易系统完美结合，为下一章的 整套 Crypto 做市框架（Spot + Perpetual + Multi-Venue） 提供基础。

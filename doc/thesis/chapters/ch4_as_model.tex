@@ -1,0 +1,309 @@
+\chapter{Avellaneda--Stoikov 最优做市模型}
+\label{chap:as_model}
+
+\section{引言}
+
+Avellaneda--Stoikov（2008）模型是现代自动做市理论的基石，为做市商在随机价格与随机订单流环境下的最优 bid/ask 报价提供了一个可求解、结构清晰、经济含义强烈的动态模型。本章将从基本假设出发，结合上一章的数学基础，系统地推导最优报价、最优库存管理机制以及 reservation price（保留价格）与 optimal spread（最优价差）的闭式解，并解释其在加密货币 CEX 市场中的意义。
+
+本章结构如下：
+
+\begin{itemize}
+  \item 第 \ref{sec:as_setup} 节介绍模型设定；
+  \item 第 \ref{sec:as_intensity} 节介绍订单到达强度与流动性参数；
+  \item 第 \ref{sec:as_hjb} 节推导核心 HJB 方程；
+  \item 第 \ref{sec:as_solution} 节给出最优 bid/ask 的显式解；
+  \item 第 \ref{sec:as_econ} 节解释解的经济含义；
+  \item 第 \ref{sec:as_crypto} 节讨论在加密货币 CEX 环境中的适配；
+\end{itemize}
+
+本章提供了做市商与价格风险、库存风险之间权衡的数学基础，是后续带库存约束的 Gueant--Lehalle--Tapia 模型（第五章）的起点。
+
+\section{模型设定}
+\label{sec:as_setup}
+
+做市商面对以下状态变量：
+
+\begin{itemize}
+  \item $S_t$: 中间价（mid-price）
+  \item $q_t$: 库存（inventory）
+  \item $X_t$: 现金账户（cash account）
+\end{itemize}
+
+总资产（wealth）为：
+\[
+W_t = X_t + q_t S_t.
+\]
+
+中间价遵循布朗运动：
+\begin{equation}
+\mathrm{d}S_t = \sigma\, \mathrm{d}W_t,
+\end{equation}
+其中 $\sigma$ 为瞬时波动率，$W_t$ 为标准布朗运动。
+
+做市商在时间 $t$ 处提交两个限价单：
+
+\[
+S_t^b = S_t - \delta_t^b,\qquad 
+S_t^a = S_t + \delta_t^a,
+\]
+
+其中：
+
+- $\delta_t^b$：bid 偏离 mid-price 的距离；
+- $\delta_t^a$：ask 偏离 mid-price 的距离；
+
+做市商的决策变量是 $(\delta_t^b, \delta_t^a)$。
+
+库存与现金的动态：
+
+\[
+q_t \to q_t + 1 \quad \text{(bid 成交)},
+\quad 
+X_t \to X_t - (S_t - \delta_t^b),
+\]
+
+\[
+q_t \to q_t - 1 \quad \text{(ask 成交)},
+\quad 
+X_t \to X_t + (S_t + \delta_t^a).
+\]
+
+做市商希望最大化最终效用：
+
+\[
+\max_{\delta^b,\delta^a}
+\mathbb{E}\left[ -e^{-\gamma (X_T + q_T S_T)} \right].
+\]
+
+其中 $\gamma > 0$ 是绝对风险厌恶度。
+
+\section{订单到达强度模型}
+\label{sec:as_intensity}
+
+关键假设：成交强度随报价偏离 mid-price 的距离指数衰减（源自论文 \cite{AvellanedaStoikov2008}）：
+
+\begin{equation}
+\lambda^b(\delta) = A e^{-k\delta},\qquad
+\lambda^a(\delta) = A e^{-k\delta},
+\label{eq:intensity}
+\end{equation}
+
+其中：
+\begin{itemize}
+  \item $A$：流动性规模；
+  \item $k$：订单对价格敏感度；
+\end{itemize}
+
+经济直觉：
+
+- $\delta$ 越小（接近 mid-price） → 成交概率高；
+- $\delta$ 越大 → 成交概率低；
+- $A,k$ 共同刻画 LOB 的深度与流动性条件。
+
+后续 crypto 扩展模型会引入 bid/ask 非对称强度。
+
+\section{HJB 方程推导}
+\label{sec:as_hjb}
+
+定义价值函数：
+
+\[
+u(t,x,q,s)=
+\max_{\delta^b,\delta^a}
+\mathbb{E}_t\left[ -e^{-\gamma(X_T + q_T S_T)} \right].
+\]
+
+使用动态规划原理与 Itô 引理，得 HJB 方程：
+
+\[
+0 = 
+\partial_t u + \frac{1}{2}\sigma^2 \partial_{ss}u
++ 
+\max_{\delta^b} 
+\lambda^b(\delta^b)
+\big[
+u(t,x-(s-\delta^b), q+1,s) - u(t,x,q,s)
+\big]
+\]
+
+\[
++
+\max_{\delta^a} 
+\lambda^a(\delta^a)
+\big[
+u(t,x+(s+\delta^a), q-1,s) - u(t,x,q,s)
+\big].
+\]
+
+为求解此 PDE，我们利用 CARA 效用的指数结构：
+
+\[
+u(t,x,q,s) = -e^{-\gamma(x+qs)} \phi_q(t,s).
+\]
+
+代入，可消去 $x,s$ 项，并使问题只依赖 $q$。
+
+进一步简化得到：
+
+\[
+\phi_q'(t) = -\frac{kA}{k+\gamma}
+\left(
+\phi_{q+1}(t) e^{-\gamma \delta_t^b}
++\phi_{q-1}(t) e^{-\gamma \delta_t^a}
+\right).
+\]
+
+优化问题化为对 $\delta_t^b,\delta_t^a$ 的一阶条件求解。
+
+\section{最优报价的解析解}
+\label{sec:as_solution}
+
+\subsection{reservation price}
+
+令
+\[
+r_t = S_t - q_t \gamma \sigma^2 (T - t).
+\]
+
+这里 $r_t$ 是做市商在库存 $q_t$ 情况下的风险中性价格（indifference price）。
+
+其含义：
+
+- $q_t > 0$（多头） → reservation price 低于 mid-price → 倾向卖出；
+- $q_t < 0$（空头） → 倾向买入；
+- 库存越大，偏移越强。
+
+\subsection{optimal spread}
+
+AS 推导得最优价差：
+
+\[
+\delta_t^b + \delta_t^a
+=
+\gamma \sigma^2 (T - t)
++
+\frac{2}{\gamma}
+\ln\left(1 + \frac{\gamma}{k}\right).
+\]
+
+其中：
+
+- 第一项是“风险价差”：库存风险越高，spread 越宽；
+- 第二项是“流动性价差”：订单流越敏感（$k$ 大），spread 越小。
+
+\subsection{最优 bid/ask 价格}
+
+最终得到最优 bid 与 ask：
+
+\[
+S_t^{b*}
+=
+r_t - \frac{1}{2}
+\left(
+\gamma\sigma^2 (T - t)
++
+\frac{2}{\gamma}\ln\left(1+\frac{\gamma}{k}\right)
+\right),
+\]
+
+\[
+S_t^{a*}
+=
+r_t + \frac{1}{2}
+\left(
+\gamma\sigma^2 (T - t)
++
+\frac{2}{\gamma}\ln\left(1+\frac{\gamma}{k}\right)
+\right).
+\]
+
+这就是 Avellaneda--Stoikov 最经典的闭式解。
+
+\section{经济含义与结构分析}
+\label{sec:as_econ}
+
+解的结构揭示了做市的三大经济力量：
+
+\subsection{1. 库存风险机制}
+
+reservation price：
+\[
+r_t = S_t - q_t \gamma \sigma^2 (T - t)
+\]
+
+是线性库存调整：
+
+- 库存为正 → 降低 bid、抬高 ask；
+- 库存为负 → 相反。
+
+这是库存风险管理的数学主导机制。
+
+\subsection{2. 价差分解}
+
+最优价差可写为：
+
+\[
+\text{optimal spread}
+=
+\text{risk spread}
++
+\text{liquidity spread}.
+\]
+
+解释：
+
+- 风险越大 → 价差越宽；
+- 流动性越高（$k$越大）→ 最优价差越窄。
+
+\subsection{3. 风险参数的意义}
+
+- $\gamma$ 越大 → 做市商越保守；
+- $\sigma$ 越大 → 做市越不安全，需扩大 spread；
+- $k$ 越大 → 市场流动性更好，做市更容易。
+
+\section{对加密货币 CEX 的适配}
+\label{sec:as_crypto}
+
+尽管 AS 模型起源于股票市场，但对 crypto CEX 的做市仍具有极强解释力。然而必须进行以下适配：
+\begin{enumerate}
+  \item 加入 drift（funding rate）\\
+永续合约价格含有趋势项：  
+funding rate $f_t$ 会使价格产生结构性 drift。
+
+可扩展为：
+
+\[
+\mathrm{d}S_t = \mu_t \mathrm{d}t + \sigma \mathrm{d}W_t,
+\quad
+\mu_t = f_t \cdot S_t.
+\]
+
+\item 加入 bid/ask 非对称订单流\\
+crypto CEX 常呈现非对称订单流：
+
+\[
+\lambda_t^b = A_b e^{-k_b \delta^b},\quad 
+\lambda_t^a = A_a e^{-k_a \delta^a}.
+\]
+
+例如大户买盘推动、清算瀑布导致一边订单激增。
+
+\item 加入费用结构（maker rebate）\\
+maker rebate 会导致 “有效价差” 变化：
+
+\[
+\delta^{b,eff} = \delta^b - \text{rebate}.
+\]
+
+\item 加入跳跃与高波动区间报价\\
+高波动期间应快速扩大 spread，可以把 $\sigma$ 换为实时估计的 $\hat{\sigma}_t$：
+
+\[
+\hat{\sigma}_t^2 = \text{realized volatility over past 1–5 seconds}.
+\]
+\end{enumerate}
+\section{本章小结}
+
+本章从最基本的市场设定出发，通过随机控制与指数效用框架，推导了 Avellaneda--Stoikov 最优做市模型的经典解析解，包括 reservation price、optimal spread 与动态报价机制。这一模型提供了做市商在库存风险、价格风险与订单到达概率之间权衡的数学基础。
+
+下一章将基于此模型，引入库存上限与线性化技巧，推导现代工程上最可实现的 Gueant--Lehalle--Tapia 模型。

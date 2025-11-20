@@ -1,0 +1,311 @@
+\chapter{做市模型的扩展：订单流自激性、价格冲击、费用结构与跳跃}
+\label{chap:extensions}
+
+\section{引言}
+
+在前几章中，我们重点讨论了 Avellaneda--Stoikov（AS）与 Guéant--Lehalle--Tapia（GLT）模型，它们在实际做市和学术界具有基础性地位。但这些模型的原始设定具有以下限制：
+
+\begin{enumerate}
+  \item 订单流为简单的 Poisson 模型，而真实订单流呈现自激性和簇集性；
+  \item 价格模型为布朗运动，而 crypto CEX 中存在跳跃与冲击；
+  \item 没有考虑手续费结构（maker rebate），实际收益偏差较大；
+  \item 没有考虑永续合约特有的 funding rate 驱动的 drift；
+  \item 库存管理没有考虑多交易所结构的基差风险；
+  \item 没有加入订单簿状态的信息，例如 microprice 和 imbalance；
+  \item 没有考虑批量成交、大单冲击与清算事件的影响；
+\end{enumerate}
+
+因此，本章将在 AS/GLT 框架基础上，引入更符合真实 crypto 市场的扩展模型族。
+
+\section{带自激性订单流的 Hawkes 做市模型}
+
+\subsection{Hawkes 过程回顾}
+
+Bacry--Muzy（2015）\cite{BacryMuzyReview2015} 证明金融订单到达过程高度自激，可以表示为 Hawkes 过程：
+
+\[
+\lambda_t
+=
+\mu
++
+\sum_{t_i<t}
+\alpha e^{-\beta(t - t_i)}.
+\]
+
+其中：
+
+- $\alpha$: 自激强度  
+- $\beta$: 衰减速度  
+- $\mu$: 基础流动性  
+
+条件期望：
+
+\[
+\mathbb{E}[\lambda_t] = \frac{\mu}{1 - \alpha/\beta}.
+\]
+
+因此当 $\alpha/\beta$ 接近 1 时：
+
+- 市场出现“流动性挤兑”（resiliency 下降）
+- 做市风险急剧上升
+- spread 应大幅扩张
+
+\subsection{在做市 HJB 中加入 Hawkes 的方法}
+
+对于 bid 与 ask 两侧：
+
+\[
+\lambda_t^b = A_b e^{-k_b \delta_t^b}
++
+\sum_{t_i<t} \alpha_b e^{-\beta_b (t - t_i)},
+\]
+
+\[
+\lambda_t^a = A_a e^{-k_a \delta_t^a}
++
+\sum_{t_i<t} \alpha_a e^{-\beta_a (t - t_i)}.
+\]
+
+代入 AS 模型中的 HJB：
+
+\[
+\partial_t u + 
+\frac{1}{2}\sigma^2 \partial_{ss} u
++
+\max_{\delta^b} \lambda_t^b(\delta^b) \Delta u_{q+1}
++
+\max_{\delta^a} \lambda_t^a(\delta^a) \Delta u_{q-1}
+= 0.
+\]
+
+此处的主要修改是：
+
+- 最优报价 $\delta^*$ 不再只依赖库存，还依赖 \(\lambda_t^b,\lambda_t^a\)
+- 订单流自激性越强 → 越需要扩大报价距离以减少 adverse selection
+
+这是 crypto CEX 做市中最重要的扩展之一。
+
+\section{加入价格冲击（Market Impact）的做市模型}
+
+\subsection{瞬时冲击与永久冲击}
+
+Gatheral（2010）提出了 no-dynamic-arbitrage 的冲击结构：
+
+\[
+S_{t^+} = S_t + \underbrace{\eta v_t}_{\text{instantaneous}}
++ \underbrace{\int_0^\infty G(u)v_{t-u}\,\mathrm du}_{\text{transient}},
+\]
+
+其中：
+
+- $v_t$ 为交易速度
+- $\eta$ 为瞬时冲击系数
+- $G(u)$ 为冲击核（impact kernel）
+
+如果允许做市商主动调整库存（maker-taker hybrid），冲击不可忽略。
+
+在做市框架中，只需修正：
+
+- ask 成交通常意味着价格向上冲击  
+- bid 成交通常意味着价格向下冲击  
+
+因此 $\mathrm{d}S_t$ 应加入：
+
+\[
+\mathrm{d}S_t = \sigma \mathrm{d}W_t + \eta (\mathrm{d}N_t^a - \mathrm{d}N_t^b).
+\]
+
+带入 AS/GLT 模型，会发现：
+
+- 最优 spread 必须随 $\eta$ 增大；
+- 市价单方向越强 → 做市商越容易亏损 → 扩大价差；
+- 使 adverse selection 提升为显性风险项。
+
+\section{加入 maker rebate / taker fee 的有效价差模型}
+
+Crypto CEX 通常有以下费用结构：
+
+- maker：$r_m < 0$（负费 = rebate）
+- taker：$f_t > 0$
+
+做市商挂单成交后收益变为：
+
+\[
+\delta^{b,eff}
+=
+\delta^b + r_m,
+\qquad
+\delta^{a,eff}
+=
+\delta^a + r_m.
+\]
+
+因此 AS/GLT 中最优价差应替换为：
+
+\[
+\delta^{b,eff}(q), \quad \delta^{a,eff}(q).
+\]
+
+若 $|r_m|$ 较大（如 Binance 期货 VIP），可能出现：
+
+- “zero-spread market making”
+- 甚至 “negative spread arbitrage”（即补贴做市）
+
+这是 crypto CEX 中做市利润较高的主要原因之一。
+
+\section{加入跳跃过程（Jump Diffusion）}
+
+Crypto 价格常出现跳跃：清算、监管、链上事件。
+
+模型：
+
+\[
+\mathrm{d}S_t
+=
+\sigma \mathrm{d}W_t
++
+\kappa \mathrm{d}J_t,
+\quad
+\mathbb{P}(\mathrm{d}J_t=1)=\lambda_J\,\mathrm{d}t.
+\]
+
+做市商在跳跃风险下应：
+
+\begin{itemize}
+  \item 扩大价差；
+  \item 降低库存上限；
+  \item 增大风险厌恶参数 $\gamma$；
+\end{itemize}
+
+跳跃会改变 AS 模型的 reservation price：
+
+\[
+r_t = S_t - q_t \gamma (\sigma^2 + \lambda_J \kappa^2)(T-t).
+\]
+
+库存风险变大。
+
+\section{加入永续合约 funding rate 的漂移项}
+
+永续合约价格近似满足：
+
+\[
+\mathrm{d}S_t = f_t S_t\,\mathrm{d}t + \sigma \mathrm{d}W_t.
+\]
+
+资金费率 $f_t$ 会带来方向性风险：
+
+- $f_t > 0$ → 永续价格向上漂移 → 做市商容易积累空头亏损
+- $f_t < 0$ → 永续价格向下漂移 → 做市商容易积累多头亏损
+
+因此 reservation price 修正为：
+
+\[
+r_t
+=
+S_t 
+- q_t \gamma \sigma^2 (T-t)
+- q_t f_t S_t (T-t).
+\]
+
+如果 funding 高达年化 100–300\%，这项影响极大。
+
+\section{跨交易所做市（Multi-Venue Market Making）}
+
+做市商通常同时挂盘于：
+
+- Binance Futures
+- OKX Futures
+- Bybit Futures
+- Binance Spot
+- Coinbase Spot
+
+此时需要建模基差：
+
+\[
+B_t = S_t^{(1)} - S_t^{(2)}.
+\]
+
+基差具有极强均值回复（Makarov--Schoar 2021），因此做市商可利用：
+
+- 多交易所 inventory balancing  
+- 自然对冲（hedging across venues）  
+- 更低的整体库存风险  
+
+GLT 模型扩展为向量：
+
+\[
+\mathbf{q}_t = (q_t^{(1)}, q_t^{(2)},\dots)
+\]
+
+价值函数变为高维 ODE：
+
+\[
+\dot{v}_{\mathbf{q}}(t)
+=
+A(\mathbf{q}) v_{\mathbf{q}}
+-
+\sum_{i} \eta_i v_{\mathbf{q} + e_i}
+-
+\sum_{i} \eta_i v_{\mathbf{q} - e_i}.
+\]
+
+工程上通常采用低维投影（如 principal hedge factor）。
+
+\section{加入 microprice / imbalance / queue 信息的信号驱动做市}
+
+做市不应是完全被动的。
+
+Stoikov（2018）提出 microprice：
+
+\[
+\text{microprice}_t =
+\frac{a_t V_t^{bid} + b_t V_t^{ask}}{V_t^{bid} + V_t^{ask}}.
+\]
+
+若：
+
+\[
+\text{microprice}_t > m_t,
+\]
+
+价格有上涨预期，应适当：
+
+- 撤销 ask 单；
+- 缩小 bid–ask 方向性倾斜；
+- 加速去库存；
+
+可将其并入 AS 的 reservation price：
+
+\[
+r_t^{new}
+=
+r_t + \alpha (\text{microprice}_t - m_t).
+\]
+
+其中 $\alpha$ 是信号灵敏度。
+
+此外，可以加入：
+
+- queue size（排队深度）
+- imbalance（订单不平衡度）
+- Markov-switching volatility regime
+- short-term alpha signals（如自回归、microstructure alpha）
+
+这形成 “predictive market making”。
+
+\section{本章小结}
+
+本章构建了一个完整的扩展做市模型族，使得 AS/GLT 在真实 crypto CEX 微观结构中具有可行性。扩展包括：
+
+\begin{itemize}
+  \item Hawkes 自激订单流  
+  \item 价格冲击与 adverse selection  
+  \item maker rebate / taker fee  
+  \item 跳跃风险  
+  \item 永续合约 funding rate  
+  \item 多交易所库存控制  
+  \item 基于 microprice/imbalance 的 alpha 驱动做市  
+\end{itemize}
+
+这些扩展将在下一章中的校准与估计中发挥核心作用，为第 9–11 章的实盘系统实现提供数学基础。

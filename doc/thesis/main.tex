@@ -1,0 +1,190 @@
+% !TeX program = xelatex
+\documentclass[12pt,a4paper,oneside]{book}
+
+% =========================
+% 编码与字体设置
+% =========================
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{color,xcolor}
+\usepackage{listings}
+\usepackage{mathtools}
+\usepackage{csquotes}
+\usepackage{indentfirst}
+
+% 字体设置
+\setmainfont{Times New Roman}
+\setsansfont{Helvetica Neue}
+\setmonofont{Menlo}
+
+\setCJKmainfont{PingFang SC}[AutoFakeBold=2.0,AutoFakeSlant=0.2]
+\linespread{1.3}
+
+% 页面设置
+\geometry{
+  a4paper,
+  left=3cm,
+  right=3cm,
+  top=2.8cm,
+  bottom=2.8cm,
+  headsep=0.8cm,
+  footskip=1.2cm
+}
+
+% 超链接
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=teal,
+  urlcolor=magenta
+}
+
+% 数学环境
+\numberwithin{equation}{chapter}
+\newtheorem{theorem}{定理}[chapter]
+\newtheorem{proposition}[theorem]{命题}
+\newtheorem{lemma}[theorem]{引理}
+\newtheorem{corollary}[theorem]{推论}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{定义}
+\newtheorem{assumption}[theorem]{假设}
+\newtheorem{remark}[theorem]{注}
+\newtheorem{example}[theorem]{例}
+
+%    常用数学符号
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Var}{\mathbb{V}\mathrm{ar}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\diff}{\,\mathrm{d}}
+
+% 代码环境
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  tabsize=2,
+  xleftmargin=2em,
+  framexleftmargin=1.5em
+}
+
+% 参考文献
+\usepackage[backend=biber,style=authoryear,maxbibnames=10,sorting=nyt]{biblatex}
+\addbibresource{refs.bib}
+
+% 封面信息
+\newcommand{\ThesisTitle}{基于加密货币限价订单簿的最优做市理论、模型与系统实现}
+\newcommand{\ThesisTitleEN}{Optimal Market Making Theory, Models and System Implementation in Cryptocurrency Limit Order Books}
+\newcommand{\AuthorName}{私}
+\newcommand{\AuthorNameEN}{Watashi}
+\newcommand{\DegreeName}{深度研究报告}
+\newcommand{\Supervisor}{（ChatGPT）}
+\newcommand{\UniversityCN}{（纽约大学）}
+\newcommand{\DepartmentCN}{经济学院}
+\newcommand{\DateCN}{2025 年 11 月}
+
+% =========================
+% 文档开始
+% =========================
+\begin{document}
+
+% 封面
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Large \UniversityCN \par}
+  \vspace{0.8cm}
+  {\Large \DegreeName \par}
+  \vspace{2.5cm}
+  {\bfseries\LARGE \ThesisTitle \par}
+  \vspace{0.8cm}
+  {\large \ThesisTitleEN \par}
+  \vspace{2.5cm}
+  {\large 作者：\AuthorName\ (\AuthorNameEN)\par}
+  \vspace{0.6cm}
+  {\large 指导教师：\Supervisor\par}
+  \vspace{2.5cm}
+  {\large \DepartmentCN \par}
+  \vspace{0.6cm}
+  {\large \DateCN \par}
+  \vfill
+\end{titlepage}
+
+% 前言部分
+\frontmatter
+
+% \chapter*{致谢}
+% \addcontentsline{toc}{chapter}{致谢}
+
+\chapter*{摘\ 要}
+\addcontentsline{toc}{chapter}{摘\ 要}
+
+\vspace{1em}
+\noindent\textbf{关键词：} 自动做市；限价订单簿；加密货币；库存管理；高频交易
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+\vspace{1em}
+\noindent\textbf{Keywords:} market making; limit order books; cryptocurrency; inventory risk; high-frequency trading
+
+% 目录
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+% 正文开始
+\mainmatter
+
+% 第一层：市场微观结构基础
+\input{chapters/ch1_introduction.tex}
+\input{chapters/ch2_microstructure.tex}
+
+% 第二层：数学基础
+\input{chapters/ch3_math_foundations.tex}
+
+% 第三层：最优做市理论主干
+\input{chapters/ch4_as_model.tex}
+\input{chapters/ch5_glt_model.tex}
+\input{chapters/ch6_profit_ou.tex}
+
+% 第四层：现代做市扩展
+\input{chapters/ch7_extensions.tex}
+
+% 第五层：参数估计与模型校准
+\input{chapters/ch8_calibration.tex}
+
+% 第六层：工程落地体系
+\input{chapters/ch9_system_design.tex}
+\input{chapters/ch10_crypto_mm_framework.tex}
+\input{chapters/ch11_experiments.tex}
+
+\input{chapters/ch12_conclusion.tex}
+
+% 参考文献
+\clearpage
+\printbibliography[heading=bibintoc,title={参考文献}]
+
+% 附录
+\appendix
+\input{chapters/appendixA.tex}
+\input{chapters/appendixB.tex}
+\input{chapters/appendixC.tex}
+
+\end{document}

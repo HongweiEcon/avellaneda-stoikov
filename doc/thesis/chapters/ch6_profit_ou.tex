@@ -1,0 +1,309 @@
+\chapter{做市收益的来源与均值回复结构}
+\label{chap:profit_ou}
+
+\section{引言}
+
+在前面几章中，我们基于 Avellaneda--Stoikov（AS）与 Guéant--Lehalle--Tapia（GLT）模型构建了最优做市的数学框架。然而一个更基础的问题是：
+
+\begin{center}
+\textit{做市为什么能赚钱？在什么条件下赚钱？在什么条件下会亏钱？}
+\end{center}
+
+这一问题不仅是理论上的，也是实际交易系统设计最核心的部分。在高频环境中，做市盈利主要来自三类因素：
+
+\begin{enumerate}
+  \item \textbf{spread capture（赚价差）}
+  \item \textbf{inventory PnL（库存随价格变化带来的盈亏）}
+  \item \textbf{order-flow prediction（短期价格预测）}
+\end{enumerate}
+
+其中第二项始终是负值（价格有噪声，库存引入风险），因此做市收益必须依赖于：
+
+\[
+\textbf{spread capture} > \textbf{inventory risk} + \textbf{adverse selection}.
+\]
+
+Chakraborty--Kearns（2011）\cite{ChakrabortyKearns2011} 提供了一个十分优雅的框架，把做市商的长期收益拆解为：
+
+\begin{equation}
+\mathbb{E}[\text{PnL}]
+=
+\underbrace{\mathbb{E}[\text{spread capture}]}_{\text{正收益}}
+-
+\underbrace{\mathbb{E}[q_t\, \mathrm{d}S_t]}_{\text{inventory risk}}
+-
+\underbrace{\text{adverse selection}}_{\text{信息不对称成本}},
+\label{eq:pnl_decomp}
+\end{equation}
+
+并证明在一个均值回复价格过程下，做市策略可以长期正收益；而在强趋势市场中，做市必然亏损。
+
+本章将从数学和经济学两方面深入分析做市盈利的来源。
+
+\section{做市的 PnL 分解公式}
+
+回顾总资产：
+
+\[
+W_t = X_t + q_t S_t.
+\]
+
+微分：
+
+\[
+\mathrm{d}W_t 
+= \mathrm{d}X_t + q_t \mathrm{d}S_t.
+\]
+
+其中：
+
+- $\mathrm{d}X_t$ 来自买卖价差（spread capture）
+- $q_t \mathrm{d}S_t$ 来自库存风险（inventory PnL）
+
+做市商的交易收益来自被动成交：
+
+\[
+\mathrm{d}X_t
+=
+(S_t + \delta_t^a)\,\mathrm{d}N_t^a
+-
+(S_t - \delta_t^b)\,\mathrm{d}N_t^b,
+\]
+
+其中 $\mathrm{d}N_t^{a,b}$ 是成交点过程。
+
+取期望可得：
+
+\[
+\mathbb{E}[\mathrm{d}W_t]
+=
+\underbrace{
+\delta_t^a \lambda_t^a + \delta_t^b \lambda_t^b
+}_{\text{spread capture}}
++
+\underbrace{
+q_t\, \mu_t
+}_{\text{inventory drift term}}.
+\]
+
+在均值为零的价格模型（如 $\mu_t=0$）下，第二项为零，但库存的方差导致风险成本：
+
+\[
+\mathrm{Var}[\mathrm{d}W_t] = q_t^2 \sigma^2.
+\]
+
+因此做市商必须控制库存波动，并以较大的价格偏移对冲风险，这正是 AS/GLT 模型中 reservation price 的来源。
+
+\section{基于价格过程的长期盈利条件}
+
+Chakraborty--Kearns（2011）做了一个重要发现：  
+\textbf{做市商的长期收益完全取决于价格过程是否均值回复。}
+
+他们考虑一个简单的做市策略：
+
+- 每当价格上升到上轨，做市商卖出；
+- 每当价格下降到下轨，做市商买入；
+- 目标是赚取均值回复带来的回调。
+
+假设价格满足 Ornstein--Uhlenbeck（OU）过程：
+
+\[
+\mathrm{d}S_t = \kappa(\theta - S_t)\,\mathrm{d}t + \sigma\,\mathrm{d}W_t.
+\]
+
+则做市商盈利的必要条件是：
+
+\[
+\kappa > 0.
+\]
+
+即价格对均值的回归速度为正。
+
+进一步可得做市长期平均收益：
+
+\[
+\text{PnL} 
+\approx 
+2\Delta \cdot \kappa (S_t - \theta)
+-
+\frac{1}{2}\sigma^2 \Delta^2,
+\]
+
+其中 $\Delta$ 是做市商设置的对称挂单距离。
+
+取期望，可得长期正收益条件：
+
+\[
+2\kappa \mathbb{E}[|S_t-\theta|] 
+>
+\frac{1}{2}\sigma^2 \Delta.
+\]
+
+该式意义明确：
+
+- \textbf{均值回复越强} → 做市越赚钱；
+- \textbf{波动越大} → 风险越大，spread 必须变宽；
+- \textbf{挂单距离太宽} → 参与市场太少，spread capture 下降。
+
+\section{为什么均值回复带来做市盈利？}
+
+直觉如下：
+
+- 做市商的库存倾向在价格上升时为负（卖出更多）
+- 在价格下降时为正（买入更多）
+
+因此库存与价格负相关：
+
+\[
+\text{Corr}(q_t, S_t) < 0.
+\]
+
+如果价格会回到均值，则：
+
+- 高价卖出的库存会在低价回补 → 赚价差
+- 低价买入的库存会在高价卖出 → 赚价差
+
+这是 \textbf{inventory mean reversion}。
+
+数学上：
+
+\[
+\mathbb{E}[q_t\, \mathrm{d}S_t] 
+< 0
+\quad\Longleftrightarrow\quad
+\text{有盈利}.
+\]
+
+反之，如果价格有正趋势（$\kappa <0$ 或 $\mu>0$）：
+
+\[
+q_t \text{ 在趋势方向累积 } \Rightarrow \text{亏损}.
+\]
+
+这正解释了：
+
+- crypto 上涨周期中做市商普遍亏损；
+- 横盘震荡时期做市商利润极高。
+
+\section{做市的收益结构：Adverse Selection 与 Price Impact}
+
+完整 PnL 分解如下：
+
+\begin{equation}
+\mathrm{d}W_t
+=
+\underbrace{\text{spread capture}}_{(\delta^a\lambda^a + \delta^b\lambda^b)\,\mathrm{d}t}
+\quad
+-
+\underbrace{q_t\,\mathrm{d}S_t}_{\text{inventory risk}}
+\quad
+-
+\underbrace{\text{price impact}}_{\text{adverse selection}}.
+\label{eq:pnl_full}
+\end{equation}
+
+其中 adverse selection 来自：
+
+- 市价单方向 → 短期价格变化方向  
+- 做市商被动吃单 → 往往在错误一侧成交  
+
+若市价买单预示价格上行，则：
+
+做市商的 ask 成交后  
+→ 价格继续上涨  
+→ 做市商亏钱。
+
+做市要盈利必须要求：
+
+\[
+\text{spread capture}
+>
+\text{adverse selection}.
+\]
+
+而改进做法是提升预测水平：
+
+- 若能预测订单流（例如 Hawkes 过程），可以调整挂单位置；
+- 若能预测微价格（Stoikov 2018），可提前撤单或换档挂单。
+
+\section{Crypto CEX 市场中的均值回复与做市盈利性}
+
+加密货币市场展现了与传统股票不同的均值回复结构：
+
+\subsection{短期均值回复强：}
+
+来自：
+
+- CEX order-book resiliency（Large 2007）
+- 永续合约–现货基差收敛机制（funding）
+- 内嵌的清算与杠杆机制
+- 多交易所交叉影响（cross-exchange impact）
+
+因此：
+
+\[
+\textbf{1-5 秒时间尺度上价格强烈均值回复}.
+\]
+
+这使得高频做市极其盈利。
+
+\subsection{中长期趋势强：}
+
+来自：
+
+- 宏观资金面；
+- BTC/ETH 作为风险资产的供需变化；
+- 链上结构性因素（矿工、stakers）。
+
+因此：
+
+\[
+\textbf{数小时–数天尺度上价格具有强趋势}.
+\]
+
+这解释了：
+
+- 高频做市盈利稳定；
+- 中频做市（如 5–15 分钟）常常因为趋势而亏损；
+- 需要 GLT 模型强库存约束。
+
+\section{做市盈利条件总结}
+
+基于以上推导，做市盈利的必要条件可归纳为：
+
+\begin{enumerate}
+  \item \textbf{价格存在短期均值回复}  
+      \[
+      \kappa > 0 \quad\text{或}\quad
+      \text{Corr}(q_t,\mathrm{d}S_t)<0.
+      \]
+
+  \item \textbf{订单流与价格没有强负向预测性}  
+      （否则 adverse selection 过高）
+
+  \item \textbf{库存风险可控}  
+      （必须依赖 GLT 库存约束或动态对冲）
+
+  \item \textbf{spread 足够覆盖价格噪声}  
+      \[
+      \delta > \sigma \sqrt{\mathrm{d}t}.
+      \]
+
+  \item \textbf{流动性足够高（成交概率高）}  
+      （$A,k$ 估计稳定）
+\end{enumerate}
+
+在 crypto CEX 中，这五条都成立，因此做市长期盈利强。
+
+\section{本章小结}
+
+本章从 PnL 分解出发，揭示了做市盈利的本质来源：
+
+\begin{itemize}
+  \item spread capture（赚价差）是主要正收益；
+  \item inventory risk 与 adverse selection 是主要负收益；
+  \item OU 模型中的均值回复是盈利关键；
+  \item Crypto CEX 在极短时间尺度具有非常强的均值回复，使得高频做市特别赚钱。
+\end{itemize}
+
+下一章将引入更多现实因素（drift、jump、Hawkes、手续费结构等），构建面向 Crypto 做市的扩展模型族。

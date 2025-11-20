@@ -1,0 +1,328 @@
+\chapter{加密货币多市场（现货–永续–跨交易所）一体化做市框架}
+\label{chap:crypto_mm_framework}
+
+\section{引言}
+
+加密货币市场具有高度复杂的微观结构特征：
+
+\begin{itemize}
+  \item CEX 现货（spot）与永续合约（perpetual）高度联动；
+  \item 永续合约价格通过 funding rate 与现货锚定；
+  \item 多交易所（Binance、OKX、Bybit）之间存在持续基差；
+  \item 高频波动显著，订单簿深度不断变化；
+  \item 市场存在跳跃与清算驱动的 “流动性瀑布”；
+\end{itemize}
+
+因此，一个成功的做市系统不应局限于单一市场，而必须构建：
+
+\begin{center}
+\textbf{Spot + Perpetual + Multi-Venue 的一体化做市框架}
+\end{center}
+
+本章从数学建模、策略逻辑与工程系统三个维度，构建可直接部署的综合做市结构。
+
+\section{BTC/ETH 现货–永续价格结构}
+
+定义：
+
+\begin{itemize}
+  \item $S_t^{spot}$：现货价格（Binance、Coinbase 等）
+  \item $S_t^{perp}$：永续合约价格（Binance Futures、OKX Futures）
+  \item $f_t$：永续 funding rate
+  \item $I_t$：指数价格（index price）
+\end{itemize}
+
+永续合约理论上与现货锚定：
+
+\[
+S_t^{perp} = S_t^{spot} (1 + b_t),
+\quad
+b_t \approx \int f_t\,\mathrm{d}t.
+\]
+
+因此基差 $b_t$ 应满足均值回复：
+
+\[
+\mathrm{d}b_t = -\kappa_b b_t\,\mathrm{d}t + \sigma_b\,\mathrm{d}W_t.
+\]
+
+该模型由 Makarov–Schoar（2021）实证支持。
+
+\subsection{对做市的启示}
+
+基差均值回复意味着：
+
+\begin{itemize}
+  \item perp–spot 做市天然具有低库存风险；
+  \item 可跨市场自对冲（spot/perp hedge）；
+  \item perp 上的 drift ≈ funding；
+\end{itemize}
+
+因此做市不应单独建模 spot/perp，而应构建 unified price：
+
+\[
+S_t = S_t^{spot},\qquad 
+S_t^{perp} = S_t + \tilde{b}_t.
+\]
+
+\section{跨市场库存向量与风险结构}
+
+定义库存向量：
+
+\[
+\mathbf{q}_t = 
+\begin{pmatrix}
+q_t^{spot} \\
+q_t^{perp(1)} \\
+q_t^{perp(2)} \\
+\vdots \\
+q_t^{perp(n)}
+\end{pmatrix},
+\quad
+q_t^{spot}, q_t^{perp(i)} \in \mathbb{R}.
+\]
+
+定义风险资产价格向量：
+
+\[
+\mathbf{S}_t =
+(S_t^{spot}, S_t^{perp(1)},\dots,S_t^{perp(n)}).
+\]
+
+组合价值：
+
+\[
+W_t = X_t + \mathbf{q}_t^\top \mathbf{S}_t.
+\]
+
+库存风险的方差：
+
+\[
+\mathrm{Var}(\mathrm{d}W_t)
+=
+\mathbf{q}_t^\top \Sigma_t\, \mathbf{q}_t,
+\]
+
+其中 $\Sigma_t$ 是 spot–perp–multi-venue 协方差矩阵。
+
+基差均值回复的存在，使得：
+
+\[
+\mathrm{Corr}(S^{spot}, S^{perp}) \approx 0.99,
+\]
+
+因此风险可以通过 delta-neutral hedge 有效控制：
+
+\[
+q_t^{spot} + \sum_i q_t^{perp(i)} \approx 0.
+\]
+
+这构成了 multi-market 做市的基础。
+
+\section{GLT 的高维扩展：多市场库存控制}
+
+将 GLT ODE 从一维扩展到多维：
+
+\[
+\dot{v}_{\mathbf{q}}(t)
+=
+-\mathbf{q}^\top \Gamma\, \mathbf{q}\, v_{\mathbf{q}}
++
+\sum_{i=1}^n \eta_i 
+\big(
+v_{\mathbf{q}+e_i}
++
+v_{\mathbf{q}-e_i}
+\big),
+\]
+
+其中：
+
+- $\Gamma$ 是 inventory penalty matrix（由 $\Sigma_t$ 决定）
+- $e_i$ 是第 $i$ 市场的单位库存增量
+- $\eta_i$ 对应市场 $i$ 的流动性
+
+高维 GLT 模型太大（状态空间指数级），实际中使用：
+
+- **低秩近似（Low-rank）**
+- **主对冲方向（Principal Hedge Direction）**
+- **总库存近似（Aggregate Inventory Approximation）**
+
+定义 aggregate inventory：
+
+\[
+q_t^{agg} = q_t^{spot} + \sum_{i=1}^n q_t^{perp(i)}.
+\]
+
+然后将库存风险简化为：
+
+\[
+\mathrm{Risk}(q_t^{agg}) \approx 
+\gamma \sigma^2 (T-t) (q_t^{agg})^2.
+\]
+
+从而重新使用 GLT 的一维公式：
+
+\[
+\delta^{b,a*}(q_t^{agg})
+=
+\text{GLT}(q_t^{agg}, A, k, \sigma).
+\]
+
+这大幅简化计算，足以应对实际交易环境。
+
+\section{多市场报价结构}
+
+对 spot 与 perp 生成独立但相关的报价：
+
+\[
+S^{spot,b*} = S_t - \delta^{b*}(q_t^{agg}),
+\quad
+S^{spot,a*} = S_t + \delta^{a*}(q_t^{agg}),
+\]
+
+\[
+S^{perp,b*} = S_t^{perp} - \delta^{b*}(q_t^{agg}) - \phi b_t,
+\quad
+S^{perp,a*} = S_t^{perp} + \delta^{a*}(q_t^{agg}) - \phi b_t,
+\]
+
+其中 $\phi$ 控制 perp–spot 基差预期修正（hedge ratio）。
+
+此外永续合约还需加入 funding drift：
+
+\[
+r_t^{perp} = S_t^{perp} - q_t \gamma \sigma^2 (T-t) - f_t S_t (T-t).
+\]
+
+\section{跨交易所一体化做市}
+
+对于多交易所现货与永续：
+
+定义每个交易所的 mid-price：
+
+\[
+m_t^{(i)},\quad i=1,\dots,N.
+\]
+
+跨市场价差：
+
+\[
+\Delta_{ij} = m_t^{(i)} - m_t^{(j)}.
+\]
+
+若：
+
+\[
+|\Delta_{ij}| > \theta,
+\]
+
+则可以：
+
+- 在 $i$ 交易所挂 ask
+- 在 $j$ 交易所挂 bid
+
+形成自然对冲。
+
+库存向量变为：
+
+\[
+q_t = (q^{spot}_{Bin}, q^{spot}_{OKX}, q^{perp}_{Bin}, q^{perp}_{OKX},\dots).
+\]
+
+Risk Engine 控制：
+
+\[
+\sum_i q_t^{spot(i)} + \sum_j q_t^{perp(j)} \approx 0.
+\]
+
+\section{做市、对冲与套利的一体化调度器}
+
+统一调度器执行：
+
+\begin{enumerate}
+  \item 更新市场数据（spot, perp, basis, funding）
+  \item 更新参数（$\sigma, A, k,$ Hawkes, funding drift）
+  \item 计算 unified inventory $q_t^{agg}$
+  \item 计算 GLT 基础报价
+  \item 加入基差、funding、冲击等修正
+  \item 多市场报价生成
+  \item OMS 执行
+  \item Risk Engine 检查是否需要对冲
+\end{enumerate}
+
+特别是跨市场对冲：
+
+\[
+\text{hedge size} = -q_t^{agg}.
+\]
+
+若 perp 流动性更好，则优先用 perp 对冲；若 spot 较稳定，可以 spot hedge。
+
+\section{示例：BTC/ETH 做市全流程}
+
+在实际交易中，该框架运行如下：
+
+\subsection{步骤 1：数据更新}
+
+- 获取 Binance/OKX/Bybit Perp L2
+- 获取 Binance/Coinbase Spot L2
+- 计算 mid-price、funding、basis
+
+\subsection{步骤 2：参数更新}
+
+- $\sigma_t$：1 秒 realized vol
+- $A_t,k_t$：rolling regression
+- Hawkes 参数：1 秒 MLE
+- funding drift：exchange API
+
+\subsection{步骤 3：库存与风险}
+
+计算：
+
+\[
+q_t^{agg}
+=
+q_t^{spot}
++
+q_t^{perp}.
+\]
+
+若：
+
+\[
+|q_t^{agg}| > Q_t^{max},
+\]
+
+则立即主动对冲。
+
+\subsection{步骤 4：报价生成}
+
+- 基于 GLT 输出基础 $\delta^*$  
+- perp 报价加入 funding 修正  
+- spot/perp 加入基差修正  
+
+\subsection{步骤 5：订单执行}
+
+通过 OMS：
+\begin{itemize}
+  \item cancel \& replace
+  \item multi-layer quoting
+  \item skip-switching（检测不利行情及时撤单）
+\end{itemize} 
+
+\section{本章小结}
+
+本章构建了一个可在真实 crypto 市场部署的完整多市场做市框架。其特点包括：
+
+\begin{itemize}
+  \item Spot–Perp 联动报价模型  
+  \item 基差均值回复与 unified inventory  
+  \item 多交易所协同做市  
+  \item 多维库存向量与风险控制  
+  \item 资金费率驱动的 drift 修正  
+  \item 可实时计算的 GLT-based 价格输出  
+  \item 一体化调度器管理全链路  
+\end{itemize}
+
+下一章将使用仿真器与历史市场数据对该框架进行严格验证。
